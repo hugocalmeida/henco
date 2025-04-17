@@ -1,13 +1,11 @@
 <?php
-session_start();
-require_once 'config/config.php';
+require_once 'config/utils.php';
 
 $message = '';
 $message_class = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Capture and sanitize form data
-    $email = trim($_POST['email']);
+    $email = trim($_POST['email']) ?? '';
     $password = $_POST['password'];
 
     // Connect to the database
@@ -90,12 +88,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <h4>Henco</h4>
                                 </a>
 
-                                <?php if (!empty($message)) : ?>
-                                    <div class="alert <?php echo $message_class == 'error' ? 'alert-danger' : 'alert-success'; ?> alert-dismissible fade show mt-3" role="alert">
-                                        <?php echo htmlspecialchars($message); ?>
-                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                                    </div>
-                                <?php endif; ?>
+                                <?php
+                                if (!empty($message)) {
+                                    display_message($message, $message_class);
+                                }
+                                ?>
 
                                 <form method="POST" action="" class="mt-5 mb-5 login-input">
                                     <div class="form-group mb-3">

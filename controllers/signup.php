@@ -1,45 +1,7 @@
 <?php
-$message = '';
-$message_class = '';
+require_once 'helpers.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Capture and sanitize form data
-    $name = trim($_POST['name'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $password_plain = $_POST['password'] ?? '';
-
-    // Check if fields are not empty
-    if ($name === '' || $email === '' || $password_plain === '') {
-        $message = 'All fields are required.';
-        $message_class = 'error';
-    } else {
-        $password = password_hash($password_plain, PASSWORD_BCRYPT);
-        $activation_code = bin2hex(random_bytes(16));
-
-        // Database connection
-        require_once 'config/config.php';
-        $mysqli = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-
-        if ($mysqli->connect_error) {
-            $message = 'Could not connect to the database. Please try again later.';
-            $message_class = 'error';
-        } else {
-            // Check if the email already exists
-            $stmt_check = $mysqli->prepare('SELECT email FROM users WHERE email = ?');
-            if ($stmt_check) {
-                $stmt_check->bind_param('s', $email);
-                $stmt_check->execute();
-                $stmt_check->store_result();
-                if ($stmt_check->num_rows > 0) {
-                    $message = 'Email is already in use. Please try another.';
-                    $message_class = 'error';
-                } else {
-                    // Insert new user
-                    $stmt = $mysqli->prepare('INSERT INTO users (username, email, password, role_id, activation_code) VALUES (?, ?, ?, ?, ?)');
-                    if ($stmt) {
-                        $role_id = 2; // Assuming 2 is the ID for "regular user"
-                        $stmt->bind_param('sssis', $name, $email, $password, $role_id, $activation_code);
-                        if ($stmt->execute()) {
+function handleSignup($mysqli, $name, $email, $password_plain) {
                             // Send confirmation email using mail()
                             $to = $email;
                             $subject = 'Registration Confirmation';
@@ -56,30 +18,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'Reply-To: no-reply@harmrecords.com' . "\r\n" .
                                 'X-Mailer: PHP/' . phpversion();
 
-                            if (mail($to, $subject, $message_body, $headers)) {
-                                $message = 'Registration successful! Please check your email to activate your account.';
-                                $message_class = 'success';
-                            } else {
-                                $message = 'Error sending confirmation email. Please try again later.';
-                                $message_class = 'error';
-                            }
+                        if (mail($to, $subject, $message_body, $headers)) {
+                            return ['success', 'Registration successful! Please check your email to activate your account.'];
                         } else {
-                            $message = 'Error registering user. Please try again.';
-                            $message_class = 'error';
+                            return ['error', 'Error sending confirmation email. Please try again later.'];
                         }
-                        $stmt->close();
-                    } else {
-                        $message = 'Error preparing user insertion. Please try again.';
-                        $message_class = 'error';
-                    }
-                }
-                $stmt_check->close();
-            } else {
-                $message = 'Error preparing user verification. Please try again.';
-                $message_class = 'error';
-            }
-            $mysqli->close();
-        }
+                    } 
+                    return ['error', 'Error registering user. Please try again.'];
+                } 
+                return ['error', 'Error preparing user insertion. Please try again.'];
+            } 
+            return ['error', 'Email is already in use. Please try another.'];
+        } 
+        return ['error', 'Error preparing user verification. Please try again.'];
+    }
+    return ['error', 'Could not connect to the database. Please try again later.'];
+}
+
+$message = '';
+$message_class = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $password_plain = $_POST['password'] ?? '';
+
+    if ($name === '' || $email === '' || $password_plain === '') {
+        list($message_class, $message) = ['error', 'All fields are required.'];
+    } else {
+        $password = password_hash($password_plain, PASSWORD_BCRYPT);
+        $activation_code = bin2hex(random_bytes(16));
+
+        require_once 'config/config.php';
+        $mysqli = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
+
+        list($message_class, $message) = handleSignup($mysqli, $name, $email, $password, $activation_code);
+        $mysqli->close();
     }
 }
 ?>

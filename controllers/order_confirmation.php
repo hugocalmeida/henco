@@ -1,8 +1,9 @@
 <?php
 include 'header.php';
 $page_title = 'Order Confirmation';
-
-
+/**
+ * Handles removing a product from the cart.
+ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_from_cart'])) {
     $product_id = intval($_POST['product_id']);
     unset($_SESSION['cart'][$product_id]);
@@ -10,8 +11,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_from_cart'])) 
     header('Location: cart.php');
     exit();
 }
-
-
+/**
+ * Handles updating the quantities of products in the cart.
+ */
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_cart'])) {
     foreach ($_POST['quantities'] as $product_id => $quantity) {
         $product_id = intval($product_id);
@@ -26,8 +29,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_cart'])) {
     header('Location: cart.php');
     exit();
 }
-
-
+/**
+ * Retrieves products from the cart to display.
+ */
+}
 $cart_items = [];
 if (!empty($_SESSION['cart'])) {
     $product_ids = array_keys($_SESSION['cart']);
@@ -51,22 +56,26 @@ if (!empty($_SESSION['cart'])) {
         ];
     }
 }
-
-$mysqli->close();
+/**
+ * Closes the database connection and includes the template.
+ */
 include 'template.php';
 ?>
 
  <div class="row">
     <h1 data-translate="shoppingCart">Shopping Cart</h1>
 
+    <!-- Display success message if any -->
     <?php if (isset($_SESSION['success_message'])): ?>
+
         <div class="alert alert-success">
-            <?php echo htmlspecialchars($_SESSION['success_message']); ?>
+            <?php echo $_SESSION['success_message']; ?>
         </div>
         <?php unset($_SESSION['success_message']); ?>
     <?php endif; ?>
 
     <?php if (isset($_SESSION['error_message'])): ?>
+        <!-- Display error message if any -->
         <div class="alert alert-danger">
             <?php echo htmlspecialchars($_SESSION['error_message']); ?>
         </div>
@@ -85,6 +94,7 @@ include 'template.php';
                     <th data-translate="actions">Actions</th>
                     </tr>
                 </thead>
+                <!-- Table body to display cart items -->
                 <tbody>
                     <?php $total = 0; ?>
                     <?php foreach ($cart_items as $item): ?>
@@ -95,6 +105,7 @@ include 'template.php';
                         <tr>
                             <td><?php echo htmlspecialchars($item['name']); ?></td>
                             <td>€ <?php echo htmlspecialchars(number_format($item['price'], 2, ',', '.')); ?></td>
+                            <!-- Input field for updating product quantity -->
                             <td>
                                 <input type="number" name="quantities[<?php echo $item['product_id']; ?>]" value="<?php echo $item['quantity']; ?>" min="1" max="<?php echo $item['stock']; ?>" class="form-control" required>
                             </td>
@@ -104,6 +115,7 @@ include 'template.php';
                                     <input type="hidden" name="product_id" value="<?php echo $item['product_id']; ?>">
                                     <button type="submit" name="remove_from_cart" class="btn btn-danger" onclick="return confirm('Are you sure you want to remove this product from the cart?');">Remove</button>
                                 </form>
+                                <!-- Button to remove product from cart -->
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -113,7 +125,9 @@ include 'template.php';
                     </tr>
                 </tbody>
             </table>
+            <!-- Buttons to update cart and finalize order -->
             <div class="d-flex justify-content-end mt-4">
+                <!-- Button to update cart quantities -->
                 <button type="submit" name="update_cart" class="btn btn-primary me-2">Update Cart</button>
                 <a href="finalize_order.php" class="btn btn-success">Finalize Order</a>
             </div>
@@ -122,6 +136,8 @@ include 'template.php';
         <p data-translate="emptyCart">Your cart is empty.</p>
     <?php endif; ?>
 
+    <!-- Link to continue shopping -->
+    <!-- Link to continue shopping -->
     <!-- Link to continue shopping -->
     <div class="mt-4">
         <a href="order_products.php" class="btn btn-secondary" data-translate="continueShopping"><i class="fas fa-arrow-left"></i> Continue Shopping</a>

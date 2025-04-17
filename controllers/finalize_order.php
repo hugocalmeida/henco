@@ -1,38 +1,35 @@
 <?php
-include 'header.php';
-$page_title = 'Finalize Order';
+include 'header.php'; // Include header
+include 'utils.php';
+$translations = get_translations($mysqli, $_SESSION['lang']); // Get translations for the current language
 
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
-}
+$page_title = translate('finalizeOrder', $translations); // Set page title with translation
 
-// Inicializa as variáveis para evitar erros de "undefined variable"
-$cart_items = [];
-$total_amount = 0;
+// Initialize variables to avoid "undefined variable" errors
+$cart_items = []; // Array to store items in the cart
+$total_amount = 0; // Total amount for the order
 
 // Obtém os produtos do carrinho antes do processamento do pedido
 if (!empty($_SESSION['cart'])) {
     foreach ($_SESSION['cart'] as $product_id => $item) {
-        $quantity = $item['quantity'];
+        $product_id = intval($product_id); // Ensure product ID is an integer
+        $quantity = intval($item['quantity']); // Ensure quantity is an integer
 
-        // Obtém os detalhes dos produtos
-        $stmt = $mysqli->prepare('SELECT name, price FROM products WHERE id = ?');
-        $stmt->bind_param('i', $product_id);
-        $stmt->execute();
-        $stmt->bind_result($name, $price);
-        $stmt->fetch();
-        $stmt->close();
+        $product = get_product_details($mysqli, $product_id);
+        if ($product) {
+            $subtotal = $product['price'] * $quantity;
+            $total_amount += $subtotal;
 
-        $subtotal = $price * $quantity;
-        $total_amount += $subtotal;
-
-        $cart_items[] = [
-            'product_id' => $product_id,
-            'name' => $name,
-            'price' => $price,
-            'quantity' => $quantity,
-            'subtotal' => $subtotal
-        ];
+            $cart_items[] = [
+                'product_id' => $product_id,
+                'name' => $product['name'],
+                'price' => $product['price'],
+                'quantity' => $quantity,
+                'subtotal' => $subtotal
+            ];
+        } else {
+            display_message(translate('product_not_found', $translations), 'error');
+        }
     }
 }
 
@@ -47,15 +44,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
 
     // Atualiza os detalhes do cliente (morada, cidade, etc.) se todos os campos estiverem preenchidos
     $client_id = intval($_POST['client_id']);
-    $client_address = trim($_POST['address']);
-    $client_city = trim($_POST['city']);
-    $client_state = trim($_POST['state']);
-    $client_zip = trim($_POST['zip']);
+    $client_address = htmlspecialchars(trim($_POST['address']));
+    $client_city = htmlspecialchars(trim($_POST['city']));
+    $client_state = htmlspecialchars(trim($_POST['state']));
+    $client_zip = htmlspecialchars(trim($_POST['zip']));
 
-    // Verifique se todos os campos de endereço estão preenchidos
+    // Validate that all address fields are filled
     if ($client_address === '' || $client_city === '' || $client_state === '' || $client_zip === '') {
-        $_SESSION['error_message'] = 'All address fields are required.';
-        header('Location: finalize_order.php');
+        display_message(translate('all_address_fields_required', $translations), 'error');
+
+        // Ensure that the client selection persists on validation failure
+        $_SESSION['selected_client_id'] = $client_id;
         exit();
     }
 
@@ -121,113 +120,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_order'])) {
             throw new Exception('Manager email is not set in the system settings.');
         }
 
-         // Fetch the currency setting from the settings table
-        $stmt_get_currency = $mysqli->prepare('SELECT setting_value FROM settings WHERE setting_key = ?');
-        $setting_key = 'currency';
-        $stmt_get_currency->bind_param('s', $setting_key);
-        $stmt_get_currency->execute();
-        $stmt_get_currency->bind_result($currency);
-        $stmt_get_currency->fetch();
-        $stmt_get_currency->close();
-
-        // Set a default currency if not defined
-        if (empty($currency)) {
-            $currency = '€';
-        }           
-            
-// Fetch the current language from the settings table
-$stmt_get_language = $mysqli->prepare('SELECT setting_value FROM settings WHERE setting_key = ?');
-$setting_key = 'language';
-$stmt_get_language->bind_param('s', $setting_key);
-$stmt_get_language->execute();
-$stmt_get_language->bind_result($language);
-$stmt_get_language->fetch();
-$stmt_get_language->close();
-
-// Load translations for the selected language
-$translations = [];
-$translation_file = "locales/{$language}.json"; // Assuming translations are stored in JSON files
-if (file_exists($translation_file)) {
-    $translations = json_decode(file_get_contents($translation_file), true);
-}
-
-// Function to fetch translation
-function translate($key, $translations) {
-    return $translations[$key] ?? $key;
-}            
-            
-            
         // Send email to the store manager
-        $subject = translate('new_order', $translations). " #" . $order_id . ' | ' . htmlspecialchars($client['name']);
+        $subject = translate('new_order', $translations) . " #" . $order_id . ' | ' . htmlspecialchars($client['name']);
 
-// Fetch the currency setting from the settings table
-$stmt_get_currency = $mysqli->prepare('SELECT setting_value FROM settings WHERE setting_key = ?');
-$setting_key = 'currency';
-$stmt_get_currency->bind_param('s', $setting_key);
-$stmt_get_currency->execute();
-$stmt_get_currency->bind_result($currency);
-$stmt_get_currency->fetch();
-$stmt_get_currency->close();
+        // Get the currency from settings
+        $currency = get_setting($mysqli, 'currency') ?? '€';
 
-// Set a default currency if not defined
-if (empty($currency)) {
-    $currency = '€';
-}
+        // Prepare the email message in HTML format using translation
+        $message = "<h3>" . translate('new_order_placed', $translations) . "</h3>";
+        $message .= "<p><strong>" . translate('client_name', $translations) . ":</strong> " . htmlspecialchars($client['name']) . "<br>";
+        $message .= "<strong>" . translate('client_address', $translations) . ":</strong> " . htmlspecialchars($client['address']) . ", " . htmlspecialchars($client['city']) . ", " . htmlspecialchars($client['state']) . " " . htmlspecialchars($client['zip']) . "<br>";
+        $message .= "<strong>" . translate('client_email', $translations) . ":</strong> " . htmlspecialchars($client['email']) . "<br>";
+        $message .= "<strong>" . translate('client_phone', $translations) . ":</strong> " . htmlspecialchars($client['phone']) . "</p>";
 
+        $message .= "<h4>" . translate('order_details', $translations) . "</h4>";
+        $message .= "<table border='1' cellpadding='5' cellspacing='0'>";
+        $message .= "<thead><tr><th>" . translate('product', $translations) . "</th><th>" . translate('unit_price', $translations) . "</th><th>" . translate('quantity', $translations) . "</th><th>" . translate('subtotal', $translations) . "</th></tr></thead>";
+        $message .= "<tbody>";
 
+        foreach ($cart_items as $item) {
+            $subtotal = $item['price'] * $item['quantity'];
+            $message .= "<tr>";
+            $message .= "<td>" . htmlspecialchars($item['name']) . "</td>";
+            $message .= "<td>" . htmlspecialchars($currency) . " " . number_format($item['price'], 2, ',', '.') . "</td>";
+            $message .= "<td>" . htmlspecialchars($item['quantity']) . "</td>";
+            $message .= "<td>" . htmlspecialchars($currency) . " " . number_format($subtotal, 2, ',', '.') . "</td>";
+            $message .= "</tr>";
+        }
 
-// Prepare the email message in HTML format
-$message = "<h3>" . translate('new_order_placed', $translations) . "</h3>";
-$message .= "<p><strong>" . translate('client_name', $translations) . ":</strong> " . htmlspecialchars($client['name']) . "<br>";
-$message .= "<strong>" . translate('client_address', $translations) . ":</strong> " . htmlspecialchars($client['address']) . ", " . htmlspecialchars($client['city']) . ", " . htmlspecialchars($client['state']) . " " . htmlspecialchars($client['zip']) . "<br>";
-$message .= "<strong>" . translate('client_email', $translations) . ":</strong> " . htmlspecialchars($client['email']) . "<br>";
-$message .= "<strong>" . translate('client_phone', $translations) . ":</strong> " . htmlspecialchars($client['phone']) . "</p>";
+        $message .= "<tr><td colspan='3' style='text-align:right;'><strong>" . translate('total', $translations) . ":</strong></td>";
+        $message .= "<td><strong>" . htmlspecialchars($currency) . " " . number_format($total_amount, 2, ',', '.') . "</strong></td></tr>";
+        $message .= "</tbody></table>";
 
-$message .= "<h4>" . translate('order_details', $translations) . "</h4>";
-$message .= "<table border='1' cellpadding='5' cellspacing='0'>";
-$message .= "<thead><tr><th>" . translate('product', $translations) . "</th><th>" . translate('unit_price', $translations) . "</th><th>" . translate('quantity', $translations) . "</th><th>" . translate('subtotal', $translations) . "</th></tr></thead>";
-$message .= "<tbody>";
+        $message .= "<p><strong>" . translate('order_number', $translations) . ":</strong> " . $order_id . "<br>";
+        $message .= "<strong>" . translate('user', $translations) . ":</strong> " . htmlspecialchars($_SESSION['username']) . "</p>";
 
-foreach ($cart_items as $item) {
-    $subtotal = $item['price'] * $item['quantity'];
-    $message .= "<tr>";
-    $message .= "<td>" . htmlspecialchars($item['name']) . "</td>";
-    $message .= "<td>" . htmlspecialchars($currency) . " " . number_format($item['price'], 2, ',', '.') . "</td>";
-    $message .= "<td>" . htmlspecialchars($item['quantity']) . "</td>";
-    $message .= "<td>" . htmlspecialchars($currency) . " " . number_format($subtotal, 2, ',', '.') . "</td>";
-    $message .= "</tr>";
-}
+        // Get the sender email from settings
+        $send_email = get_setting($mysqli, 'send_email');
 
-$message .= "<tr><td colspan='3' style='text-align:right;'><strong>" . translate('total', $translations) . ":</strong></td>";
-$message .= "<td><strong>" . htmlspecialchars($currency) . " " . number_format($total_amount, 2, ',', '.') . "</strong></td></tr>";
-$message .= "</tbody></table>";
+        // Validate the email
+        if (empty($send_email) || !filter_var($send_email, FILTER_VALIDATE_EMAIL)) {
+            throw new Exception(translate('invalid_email', $translations));
+        }
 
-$message .= "<p><strong>" . translate('order_number', $translations) . ":</strong> " . $order_id . "<br>";
-$message .= "<strong>" . translate('user', $translations) . ":</strong> " . htmlspecialchars($_SESSION['username']) . "</p>";
+        // Set headers for HTML email
+        $headers = "From: " . $send_email . "\r\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
 
-// Fetch "from" email address from the settings table
-$stmt_get_send_email = $mysqli->prepare('SELECT setting_value FROM settings WHERE setting_key = ?');
-$setting_key = 'send_email';
-$stmt_get_send_email->bind_param('s', $setting_key);
-$stmt_get_send_email->execute();
-$stmt_get_send_email->bind_result($send_email);
-$stmt_get_send_email->fetch();
-$stmt_get_send_email->close();
-
-// Validate the email
-if (empty($send_email) || !filter_var($send_email, FILTER_VALIDATE_EMAIL)) {
-    throw new Exception(translate('invalid_email', $translations));
-}
-
-// Set headers for HTML email
-$headers = "From: " . $send_email . "\r\n";
-$headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-
-// Send the email
-if (!mail($manager_email, translate('email_subject', $translations), $message, $headers)) {
-    throw new Exception(translate('email_send_failed', $translations));
-}
-
+        // Send the email
+        if (!mail($manager_email, $subject, $message, $headers)) {
+            throw new Exception(translate('email_send_failed', $translations));
+        }
 
         // Clear the cart
         $_SESSION['cart'] = [];
@@ -235,42 +178,24 @@ if (!mail($manager_email, translate('email_subject', $translations), $message, $
         // Commit the transaction
         $mysqli->commit();
 
-        $_SESSION['success_message'] = 'Order successfully placed! Order number: ' . $order_id;
+        display_message(translate('order_placed_successfully', $translations) . ' ' . translate('order_number', $translations) . ': ' . $order_id, 'success');
         header('Location: order_confirmation.php?order_id=' . $order_id);
         exit();
-
     } catch (Exception $e) {
         // Rollback the transaction in case of error
         $mysqli->rollback();
-        $_SESSION['error_message'] = 'Error processing order: ' . $e->getMessage();
-        header('Location: finalize_order.php');
-        exit();
+        display_message(translate('error_processing_order', $translations) . ': ' . $e->getMessage(), 'error');
     }
 }
 
 $result_clients = $mysqli->query('SELECT id, name FROM clients');
 $clients = $result_clients->fetch_all(MYSQLI_ASSOC);
 
-$mysqli->close();
-include 'template.php';
+include 'template.php'; // Include template
 ?>
 
-<?php if (isset($_SESSION['success_message'])): ?>
-    <div class="alert alert-success">
-        <?php echo htmlspecialchars($_SESSION['success_message']); ?>
-    </div>
-    <?php unset($_SESSION['success_message']); ?>
-<?php endif; ?>
-
-<?php if (isset($_SESSION['error_message'])): ?>
-    <div class="alert alert-danger">
-        <?php echo htmlspecialchars($_SESSION['error_message']); ?>
-    </div>
-    <?php unset($_SESSION['error_message']); ?>
-<?php endif; ?> 
-
-<h1 data-translate="finalizeOrder">Finalize Order</h1>
-<div class="mb-4"> <a href="cart.php" class="btn btn-secondary mt-3" data-translate="backToCart"><i class="fas fa-arrow-left"></i> Back to Cart</a></div>
+<h1 data-translate="finalizeOrder"><?php echo translate('finalizeOrder', $translations); ?></h1>
+<div class="mb-4"><a href="cart.php" class="btn btn-secondary mt-3" data-translate="backToCart"><i class="fas fa-arrow-left"></i> <?php echo translate('backToCart', $translations); ?></a></div>
 <div class="row">
 <form method="POST" action="">
     <!-- Dropdown to select the client -->
@@ -283,6 +208,12 @@ include 'template.php';
                     <?php echo htmlspecialchars($client['name']); ?>
                 </option>
             <?php endforeach; ?>
+
+             <!-- Retain the selected client ID if available -->
+            <?php if (isset($_SESSION['selected_client_id'])): ?>
+                <script>$('#clientSelect').val(<?php echo $_SESSION['selected_client_id']; ?>);</script>
+                <?php unset($_SESSION['selected_client_id']); ?>
+            <?php endif; ?>            
         </select>
     </div>       
 

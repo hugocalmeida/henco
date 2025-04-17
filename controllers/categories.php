@@ -1,67 +1,122 @@
 <?php
-include 'header.php';
+// Include necessary files and functions
+include_once 'header.php';
+include_once 'config/utils.php';
+
 $page_title = 'Categories';
 
-// Check if user is logged in and if the user is admin
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['role_id']) || $_SESSION['role_id'] != 1) {
-    // Redirect non-admin users to the home page
-    header('Location: home.php');
-    exit();
+// Verify if the user is an admin
+if (!is_admin()) {
+    header('Location: dashboard.php'); // Redirect non-admins
+    exit;
 }
 
-// Create the 'categories' table if it doesn't exist
-$create_categories_table_sql = "CREATE TABLE IF NOT EXISTS categories (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL
-)";
-$mysqli->query($create_categories_table_sql);
-
-// Process actions to add, edit, and delete categories
+// Process form submissions for adding, editing, or deleting categories
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Add a new category
     if (isset($_POST['add_category'])) {
-        $name = trim($_POST['name']);
-        $stmt_add = $mysqli->prepare('INSERT INTO categories (name) VALUES (?)');
-        $stmt_add->bind_param('s', $name);
-        $stmt_add->execute();
-        $stmt_add->close();
-    } elseif (isset($_POST['edit_category'])) {
-        $category_id = intval($_POST['category_id']);
-        $name = trim($_POST['name']);
-        $stmt_edit = $mysqli->prepare('UPDATE categories SET name = ? WHERE id = ?');
-        $stmt_edit->bind_param('si', $name, $category_id);
-        $stmt_edit->execute();
-        $stmt_edit->close();
-    } elseif (isset($_POST['delete_category'])) {
-        $category_id = intval($_POST['category_id']);
-        $stmt_check = $mysqli->prepare('SELECT COUNT(*) FROM products WHERE category_id = ?');
-        $stmt_check->bind_param('i', $category_id);
-        $stmt_check->execute();
-        $stmt_check->bind_result($product_count);
-        $stmt_check->fetch();
-        $stmt_check->close();
-
-        if ($product_count > 0) {
-            $error_message = 'Cannot delete a category with associated products.';
+        $name = isset($_POST['name']) ? htmlspecialchars($_POST['name']) : '';
+        if (empty($name)) {
+            display_message('Name cannot be empty.', 'error');
         } else {
-            $stmt_delete = $mysqli->prepare('DELETE FROM categories WHERE id = ?');
-            $stmt_delete->bind_param('i', $category_id);
-            $stmt_delete->execute();
-            $stmt_delete->close();
+            try {
+                $mysqli = db_connect(); // Get database connection
+                $stmt = $mysqli->prepare('INSERT INTO categories (name) VALUES (?)');
+                if ($stmt) {
+                    $stmt->bind_param('s', $name);
+                    if ($stmt->execute()) {
+                        display_message('Category added successfully.', 'success');
+                    } else {
+                        display_message('Failed to add category: ' . $stmt->error, 'error');
+                    }
+                    $stmt->close();
+                } else {
+                    display_message('Failed to prepare statement.', 'error');
+                }
+            } catch (Exception $e) {
+                display_message('Error: ' . $e->getMessage(), 'error');
+            } finally {
+                if (isset($mysqli)) $mysqli->close(); // Close connection
+            }
+        }
+    }
+    // Edit an existing category
+    elseif (isset($_POST['edit_category'])) {
+        $category_id = $_POST['category_id'] ?? 0;
+        $name = isset($_POST['name']) ? htmlspecialchars($_POST['name']) : '';
+        if (empty($name) || $category_id <= 0) {
+            display_message('Invalid input for editing.', 'error');
+        } else {
+            try {
+                $mysqli = db_connect();
+                $stmt = $mysqli->prepare('UPDATE categories SET name = ? WHERE id = ?');
+                if ($stmt) {
+                    $stmt->bind_param('si', $name, $category_id);
+                    if ($stmt->execute()) {
+                        display_message('Category updated successfully.', 'success');
+                    } else {
+                        display_message('Failed to update category: ' . $stmt->error, 'error');
+                    }
+                    $stmt->close();
+                } else {
+                    display_message('Failed to prepare update statement.', 'error');
+                }
+            } catch (Exception $e) {
+                display_message('Error: ' . $e->getMessage(), 'error');
+            } finally {
+                if (isset($mysqli)) $mysqli->close();
+            }
+        }
+    }
+    // Delete a category
+    elseif (isset($_POST['delete_category'])) {
+        $category_id = $_POST['category_id'] ?? 0;
+        if ($category_id <= 0) {
+            display_message('Invalid category ID for deletion.', 'error');
+        } else {
+            try {
+                $mysqli = db_connect();
+                // Check for associated products before deleting
+                $stmt_check = $mysqli->prepare('SELECT COUNT(*) FROM products WHERE category_id = ?');
+                $stmt_check->bind_param('i', $category_id);
+                $stmt_check->execute();
+                $stmt_check->bind_result($product_count);
+                $stmt_check->fetch();
+                $stmt_check->close();
+
+                if ($product_count > 0) {
+                    display_message('Cannot delete: Category has associated products.', 'error');
+                } else {
+                    $stmt_delete = $mysqli->prepare('DELETE FROM categories WHERE id = ?');
+                    if ($stmt_delete) {
+                        $stmt_delete->bind_param('i', $category_id);
+                        if ($stmt_delete->execute()) {
+                            display_message('Category deleted successfully.', 'success');
+                        } else {
+                            display_message('Failed to delete category: ' . $stmt_delete->error, 'error');
+                        }
+                        $stmt_delete->close();
+                    } else {
+                        display_message('Failed to prepare delete statement.', 'error');
+                    }
+                }
+            } catch (Exception $e) {
+                display_message('Error: ' . $e->getMessage(), 'error');
+            } finally {
+                if (isset($mysqli)) $mysqli->close();
+            }
         }
     }
 }
 
 // Get all categories
-$sql = 'SELECT * FROM categories ORDER BY name ASC';
-$result = $mysqli->query($sql);
-$categories = $result->fetch_all(MYSQLI_ASSOC);
-$mysqli->close();
+$categories = get_all_categories();
+
 include 'template.php';
 ?>
 
-<?php if (isset($error_message)): ?>
-    <div class="alert alert-danger" role="alert" data-translate="errorMessage"><?php echo htmlspecialchars($error_message); ?></div>
-<?php endif; ?>
+<!-- Display message if available -->
+<?php display_message(get_message(), get_message_type()); ?>
 
 <div class="row">
     <h1 data-translate="categories">Categories</h1>
@@ -86,7 +141,7 @@ include 'template.php';
                         <td><?php echo htmlspecialchars($category['name']); ?></td>
                         <td>
                             <!-- Button to open the edit modal -->
-                            <button class="btn btn-warning edit-category-btn" data-bs-toggle="modal" data-bs-target="#editCategoryModal" data-category='<?php echo json_encode($category); ?>' data-translate="edit">Edit</button>
+                            <button class="btn btn-warning edit-category-btn" data-bs-toggle="modal" data-bs-target="#editCategoryModal" data-category='<?php echo htmlspecialchars(json_encode($category), ENT_QUOTES, 'UTF-8'); ?>' data-translate="edit">Edit</button>
                             <!-- Form to delete category -->
                             <form method="POST" action="" class="d-inline-block">
                                 <input type="hidden" name="delete_category" value="1">

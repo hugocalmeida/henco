@@ -1,77 +1,128 @@
 <?php
-include 'header.php';
-$page_title = 'Clients';
+// There are some functions that should be grouped in a file or class. Functions like `handleMessage`, `addClient`, `editClient`, `deleteClient`, `fetchClients`
+include 'header.php'; // Includes database connection and session management.
+$page_title = 'Clients'; // Sets the title of the page.
 
-// Check if user is logged in and if the user is admin
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['role_id']) || $_SESSION['role_id'] != 1) {
-    header('Location: home.php');
-    exit();
+// Check if the user is an admin. If not, redirects to the dashboard.
+if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] != 1) {
+    header('Location: dashboard.php');
+    exit;
 }
 
-// Create the 'clients' table if it does not exist
-$create_clients_table_sql = "CREATE TABLE IF NOT EXISTS clients (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    phone VARCHAR(50),
-    address VARCHAR(255),
-    city VARCHAR(100),
-    state VARCHAR(50),
-    zip VARCHAR(20),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)";
-$mysqli->query($create_clients_table_sql);
+// Function to handle messages (success or error).
+function handleMessage($message, $type = 'success') {
+    $_SESSION['message'] = $message;
+    $_SESSION['message_type'] = $type;
+}
 
-// Process actions to add, edit, and delete clients
+// Handles adding a new client to the database.
+function addClient($mysqli) {
+    $name = htmlspecialchars(trim($_POST['name']));
+    $email = htmlspecialchars(trim($_POST['email']));
+    $phone = htmlspecialchars(trim($_POST['phone']));
+    $address = htmlspecialchars(trim($_POST['address']));
+    $city = htmlspecialchars(trim($_POST['city']));
+    $state = htmlspecialchars(trim($_POST['state']));
+    $zip = htmlspecialchars(trim($_POST['zip']));
+    $stmt_add = $mysqli->prepare('INSERT INTO clients (name, email, phone, address, city, state, zip) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    $stmt_add->bind_param('sssssss', $name, $email, $phone, $address, $city, $state, $zip);
+
+    if ($stmt_add->execute()) {
+        handleMessage('Client added successfully.');
+    } else {
+        handleMessage('Failed to add client: ' . $stmt_add->error, 'error');
+    }
+
+    $stmt_add->close();
+}
+
+// Handles editing an existing client's information.
+function editClient($mysqli) {
+    $client_id = intval($_POST['client_id']) ?? 0;
+    $name = htmlspecialchars(trim($_POST['name']));
+    $email = htmlspecialchars(trim($_POST['email']));
+    $phone = htmlspecialchars(trim($_POST['phone']));
+    $address = htmlspecialchars(trim($_POST['address']));
+    $city = htmlspecialchars(trim($_POST['city']));
+    $state = htmlspecialchars(trim($_POST['state']));
+    $zip = htmlspecialchars(trim($_POST['zip']));
+    $stmt_edit = $mysqli->prepare('UPDATE clients SET name = ?, email = ?, phone = ?, address = ?, city = ?, state = ?, zip = ? WHERE id = ?');
+    $stmt_edit->bind_param('sssssssi', $name, $email, $phone, $address, $city, $state, $zip, $client_id);
+
+    if ($stmt_edit->execute()) {
+        handleMessage('Client updated successfully.');
+    } else {
+        handleMessage('Failed to update client: ' . $stmt_edit->error, 'error');
+    }    
+
+    $stmt_edit->close();
+}
+
+// Handles deleting a client from the database.
+function deleteClient($mysqli) {
+    $client_id = intval($_POST['client_id']);
+    $stmt_delete = $mysqli->prepare('DELETE FROM clients WHERE id = ?');
+    $stmt_delete->bind_param('i', $client_id);
+
+    if ($stmt_delete->execute()) {
+        handleMessage('Client deleted successfully.');
+    } else {
+        handleMessage('Failed to delete client: ' . $stmt_delete->error, 'error');
+    }
+
+    $stmt_delete->close();
+}
+
+// Process actions based on the HTTP request method.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add_client'])) {
-        $name = trim($_POST['name']);
-        $email = trim($_POST['email']);
-        $phone = trim($_POST['phone']);
-        $address = trim($_POST['address']);
-        $city = trim($_POST['city']);
-        $state = trim($_POST['state']);
-        $zip = trim($_POST['zip']);
-        $stmt_add = $mysqli->prepare('INSERT INTO clients (name, email, phone, address, city, state, zip) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        $stmt_add->bind_param('sssssss', $name, $email, $phone, $address, $city, $state, $zip);
-        $stmt_add->execute();
-        $stmt_add->close();
+        addClient($mysqli);
     } elseif (isset($_POST['edit_client'])) {
-        $client_id = intval($_POST['client_id']);
-        $name = trim($_POST['name']);
-        $email = trim($_POST['email']);
-        $phone = trim($_POST['phone']);
-        $address = trim($_POST['address']);
-        $city = trim($_POST['city']);
-        $state = trim($_POST['state']);
-        $zip = trim($_POST['zip']);
-        $stmt_edit = $mysqli->prepare('UPDATE clients SET name = ?, email = ?, phone = ?, address = ?, city = ?, state = ?, zip = ? WHERE id = ?');
-        $stmt_edit->bind_param('sssssssi', $name, $email, $phone, $address, $city, $state, $zip, $client_id);
-        $stmt_edit->execute();
-        $stmt_edit->close();
+        editClient($mysqli);
     } elseif (isset($_POST['delete_client'])) {
-        $client_id = intval($_POST['client_id']);
-        $stmt_delete = $mysqli->prepare('DELETE FROM clients WHERE id = ?');
-        $stmt_delete->bind_param('i', $client_id);
-        $stmt_delete->execute();
-        $stmt_delete->close();
+        deleteClient($mysqli);
+    }
+
+    // Redirect to refresh the page and show the updated client list.
+    header('Location: clients.php');
+    exit;
+}
+
+// Fetch all clients from the database, ordered by name.
+function fetchClients($mysqli) {
+    $result = $mysqli->query('SELECT * FROM clients ORDER BY name ASC');
+    if ($result) {
+        return $result->fetch_all(MYSQLI_ASSOC);
+    } else {
+        handleMessage('Failed to retrieve clients: ' . $mysqli->error, 'error');
+        return []; // Return an empty array in case of failure.
     }
 }
 
-// Fetch all clients for DataTables
-$result = $mysqli->query('SELECT * FROM clients ORDER BY name ASC');
-$clients = $result->fetch_all(MYSQLI_ASSOC);
-$mysqli->close();
-include 'template.php';
+$clients = fetchClients($mysqli);
+
+include 'template.php'; // Includes the HTML template for the page.
 ?>
 
 <div class="row">
     <h1 data-translate="clients">Clients</h1>
 
-    <?php if ($is_admin): ?>
-        <button class="btn btn-primary col-1 mb-3" data-bs-toggle="modal" data-bs-target="#addClientModal" data-translate="add">
-            <i class="fa fa-plus-circle" aria-hidden="true"></i> Add
-        </button>
+    <!-- Add Client Button -->
+    <button class="btn btn-primary col-1 mb-3" data-bs-toggle="modal" data-bs-target="#addClientModal" data-translate="add">
+        <i class="fa fa-plus-circle" aria-hidden="true"></i> Add
+    </button>
+
+    <!-- Display any messages (success or error) -->
+    <?php if (isset($_SESSION['message'])): ?>
+        <div class="alert alert-<?= $_SESSION['message_type'] == 'error' ? 'danger' : 'success'; ?> alert-dismissible fade show" role="alert">
+            <?= htmlspecialchars($_SESSION['message']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        <?php
+        // Clear the message after displaying it.
+        unset($_SESSION['message']);
+        unset($_SESSION['message_type']);
+        ?>
     <?php endif; ?>
 
     <div class="table-responsive">
@@ -83,36 +134,32 @@ include 'template.php';
                     <th data-translate="phone">Phone</th>
                     <th data-translate="city">City</th>
                     <th data-translate="state">State</th>
-                    <?php if ($is_admin): ?>
-                        <th data-translate="actions">Actions</th>
-                    <?php endif; ?>
+                    <th data-translate="actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($clients as $client): ?>
-                    <tr>
-                        <td><?php echo htmlspecialchars($client['name']); ?></td>
-                        <td><?php echo htmlspecialchars($client['email']); ?></td>
-                        <td><?php echo htmlspecialchars($client['phone']); ?></td>
-                        <td><?php echo htmlspecialchars($client['city']); ?></td>
-                        <td><?php echo htmlspecialchars($client['state']); ?></td>
-                        <?php if ($is_admin): ?>
-                            <td>
-                                <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#editClientModal" onclick='populateEditModalClient(<?php echo json_encode($client); ?>)' data-translate="edit">Edit</button>
-                                <form method="POST" action="" class="d-inline-block">
-                                    <input type="hidden" name="delete_client" value="1">
-                                    <input type="hidden" name="client_id" value="<?php echo $client['id']; ?>">
-                                    <button type="submit" class="btn btn-danger" data-translate="delete">Delete</button>
-                                </form>
-                                 <a href="client_details.php?client_id=<?php echo $client['id']; ?>" class="btn btn-primary" data-translate="viewDetails">View Details</a>        
-                            </td>
-                        <?php endif; ?>
-                    </tr>
+                <tr>
+                    <td><?= htmlspecialchars($client['name']); ?></td>
+                    <td><?= htmlspecialchars($client['email']); ?></td>
+                    <td><?= htmlspecialchars($client['phone']); ?></td>
+                    <td><?= htmlspecialchars($client['city']); ?></td>
+                    <td><?= htmlspecialchars($client['state']); ?></td>
+                    <td>
+                        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#editClientModal" onclick='populateEditModalClient(<?= json_encode($client); ?>)' data-translate="edit">Edit</button>
+                        <form method="POST" action="" class="d-inline-block">
+                            <input type="hidden" name="delete_client" value="1">
+                            <input type="hidden" name="client_id" value="<?= $client['id']; ?>">
+                            <button type="submit" class="btn btn-danger" data-translate="delete">Delete</button>
+                        </form>
+                        <a href="client_details.php?client_id=<?= $client['id']; ?>" class="btn btn-primary" data-translate="viewDetails">View Details</a>
+                    </td>
+                </tr>
                 <?php endforeach; ?>
                 <?php if (empty($clients)): ?>
-                    <tr>
-                        <td colspan="<?php echo $is_admin ? '6' : '5'; ?>" class="text-center" data-translate="noClientsFound">No clients found.</td>
-                    </tr>
+                <tr>
+                    <td colspan="6" class="text-center" data-translate="noClientsFound">No clients found.</td>
+                </tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -162,8 +209,8 @@ include 'template.php';
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-translate="close">Close</button>
                     <button type="submit" class="btn btn-primary" data-translate="add">Add</button>                    
-                   
-                </div>
+
+                 </div>
             </form>
         </div>
     </div>

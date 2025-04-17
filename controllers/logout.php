@@ -1,8 +1,6 @@
 <?php
 // logout.php
 
-session_start();
-
 // Limpa todas as variáveis de sessão
 $_SESSION = array();
 

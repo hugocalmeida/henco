@@ -1,5 +1,9 @@
 <?php
 // Connect to the database
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
 include 'dbconnect.php';
 
 // Verify if function was already declared
@@ -16,9 +20,10 @@ if (!function_exists('get_setting')) {
     }
 }
 
-//Store company name in session
-if (!isset($_SESSION['company_name'])) {
-    session_start();
+// Store company name in session
+if (isset($mysqli) && !isset($_SESSION['company_name'])) {
     $_SESSION['company_name'] = get_setting($mysqli, 'company_name') ?: 'Default Company Name';
+} else {
+    $_SESSION['company_name'] =  'Default Company Name';
 }
 ?>
